@@ -66,6 +66,7 @@ static const char *ATTR_NAMES[] = {
 
 // We keep all the text textures in a cache so that we don't have to recreate
 // them each time.
+// Performance optimization: tracks unused frames to clean up stale entries.
 typedef struct tex_cache tex_cache_t;
 struct tex_cache {
     tex_cache_t *next, *prev;
@@ -73,11 +74,17 @@ struct tex_cache {
     char        *text;
     int         effects;
     bool        in_use;
+    int         unused_frames;   // Number of frames this entry hasn't been used
     int         xoff;
     int         yoff;
     double      color[3];
     texture_t   *tex;
 };
+
+// Maximum number of frames a text cache entry can be unused before cleanup
+#define TEX_CACHE_MAX_UNUSED_FRAMES 120  // ~2 seconds at 60fps
+// Maximum number of text cache entries to keep
+#define TEX_CACHE_MAX_ENTRIES 256
 
 enum {
     ITEM_LINES = 1,
@@ -366,7 +373,8 @@ void render_prepare(renderer_t *rend, const projection_t *proj,
                     double win_w, double win_h,
                     double scale, bool cull_flipped)
 {
-    tex_cache_t *ctex;
+    tex_cache_t *ctex, *tmp;
+    int cache_count = 0;
 
     rend->fb_size[0] = win_w * scale;
     rend->fb_size[1] = win_h * scale;
@@ -374,8 +382,31 @@ void render_prepare(renderer_t *rend, const projection_t *proj,
     rend->cull_flipped = cull_flipped;
     rend->proj = *proj;
 
-    DL_FOREACH(rend->tex_cache, ctex)
+    // Mark all cache entries as unused and track count
+    DL_FOREACH(rend->tex_cache, ctex) {
         ctex->in_use = false;
+        cache_count++;
+    }
+
+    // Clean up stale text cache entries for better memory management
+    // This improves performance by freeing unused textures
+    DL_FOREACH_SAFE(rend->tex_cache, ctex, tmp) {
+        if (!ctex->in_use) {
+            ctex->unused_frames++;
+            // Remove entries that haven't been used for too long
+            // or if we have too many entries
+            if (ctex->unused_frames > TEX_CACHE_MAX_UNUSED_FRAMES ||
+                cache_count > TEX_CACHE_MAX_ENTRIES) {
+                DL_DELETE(rend->tex_cache, ctex);
+                texture_release(ctex->tex);
+                free(ctex->text);
+                free(ctex);
+                cache_count--;
+            }
+        } else {
+            ctex->unused_frames = 0;
+        }
+    }
 
     rend->depth_min = DBL_MAX;
     rend->depth_max = DBL_MIN;

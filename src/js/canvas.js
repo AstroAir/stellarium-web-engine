@@ -95,8 +95,42 @@ Module.afterInit(function() {
       }
     });
 
+    // Touch tracking for smooth mobile experience
+    var touchState = {
+      lastTouchTime: 0,
+      touchCount: 0,
+      lastScale: 1,
+      pinchStartDist: 0,
+      pinchCenter: {x: 0, y: 0}
+    };
+
+    // Get distance between two touch points
+    function getTouchDistance(touch1, touch2) {
+      var dx = touch1.pageX - touch2.pageX;
+      var dy = touch1.pageY - touch2.pageY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    // Get center point between two touches
+    function getTouchCenter(touch1, touch2, rect) {
+      return {
+        x: ((touch1.pageX + touch2.pageX) / 2) - rect.left,
+        y: ((touch1.pageY + touch2.pageY) / 2) - rect.top
+      };
+    }
+
     canvas.addEventListener('touchstart', function(e) {
       var rect = canvas.getBoundingClientRect();
+      touchState.touchCount = e.touches.length;
+      touchState.lastTouchTime = performance.now();
+
+      // Initialize pinch tracking when two fingers touch
+      if (e.touches.length === 2) {
+        touchState.pinchStartDist = getTouchDistance(e.touches[0], e.touches[1]);
+        touchState.pinchCenter = getTouchCenter(e.touches[0], e.touches[1], rect);
+        touchState.lastScale = 1;
+      }
+
       for (var i = 0; i < e.changedTouches.length; i++) {
         var id = e.changedTouches[i].identifier;
         var relX = e.changedTouches[i].pageX - rect.left;
@@ -104,9 +138,27 @@ Module.afterInit(function() {
         Module._core_on_mouse(id, 1, relX, relY, 1);
       }
     }, {passive: true});
+
     canvas.addEventListener('touchmove', function(e) {
       e.preventDefault();
       var rect = canvas.getBoundingClientRect();
+      touchState.touchCount = e.touches.length;
+
+      // Handle pinch zoom with smoother tracking
+      if (e.touches.length === 2 && touchState.pinchStartDist > 0) {
+        var currentDist = getTouchDistance(e.touches[0], e.touches[1]);
+        var scale = currentDist / touchState.pinchStartDist;
+        var center = getTouchCenter(e.touches[0], e.touches[1], rect);
+
+        // Only apply significant scale changes to reduce jitter
+        if (Math.abs(scale - touchState.lastScale) > 0.005) {
+          var deltaScale = scale / touchState.lastScale;
+          Module._core_on_zoom(deltaScale, center.x, center.y);
+          touchState.lastScale = scale;
+          touchState.pinchCenter = center;
+        }
+      }
+
       for (var i = 0; i < e.changedTouches.length; i++) {
         var id = e.changedTouches[i].identifier;
         var relX = e.changedTouches[i].pageX - rect.left;
@@ -114,8 +166,32 @@ Module.afterInit(function() {
         Module._core_on_mouse(id, -1, relX, relY, 1);
       }
     }, {passive: false});
+
     canvas.addEventListener('touchend', function(e) {
       var rect = canvas.getBoundingClientRect();
+
+      // Reset pinch state when fingers are lifted
+      if (e.touches.length < 2) {
+        touchState.pinchStartDist = 0;
+        touchState.lastScale = 1;
+      }
+      touchState.touchCount = e.touches.length;
+
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        var id = e.changedTouches[i].identifier;
+        var relX = e.changedTouches[i].pageX - rect.left;
+        var relY = e.changedTouches[i].pageY - rect.top;
+        Module._core_on_mouse(id, 0, relX, relY, 1);
+      }
+    });
+
+    // Handle touch cancel event for better mobile compatibility
+    canvas.addEventListener('touchcancel', function(e) {
+      var rect = canvas.getBoundingClientRect();
+      touchState.pinchStartDist = 0;
+      touchState.lastScale = 1;
+      touchState.touchCount = 0;
+
       for (var i = 0; i < e.changedTouches.length; i++) {
         var id = e.changedTouches[i].identifier;
         var relX = e.changedTouches[i].pageX - rect.left;

@@ -150,6 +150,53 @@ struct core
     // Zoom movement. -1 to zoom out, +1 to zoom in.
     double zoom;
 
+    // Pinch zoom inertia settings for mobile devices
+    struct {
+        bool        enabled;        // Whether pinch inertia is enabled
+        double      velocity;       // Current zoom velocity
+        double      friction;       // Friction coefficient (0.0-1.0)
+        double      last_scale;     // Last pinch scale value
+        double      last_time;      // Last pinch timestamp
+        double      center[2];      // Center point of pinch
+    } pinch_inertia;
+
+    // Pan inertia settings for smooth panning on mobile
+    struct {
+        bool        enabled;        // Whether pan inertia is enabled
+        double      velocity[2];    // Current pan velocity (yaw, pitch)
+        double      friction;       // Friction coefficient (0.0-1.0)
+        double      last_pos[2];    // Last pan position
+        double      last_time;      // Last pan timestamp
+    } pan_inertia;
+
+    // Touch sensitivity settings
+    struct {
+        double      pan_sensitivity;    // Pan movement sensitivity (default: 1.0)
+        double      zoom_sensitivity;   // Zoom sensitivity (default: 1.0)
+    } touch_settings;
+
+    // Rendering quality settings for mobile optimization
+    struct {
+        int         quality_level;      // 0=low, 1=medium, 2=high (default)
+        bool        reduce_labels;      // Reduce label density on low quality
+        double      label_density;      // Label density multiplier (0.0-1.0)
+    } render_settings;
+
+    // Performance optimization settings
+    struct {
+        bool        adaptive_fps;       // Enable adaptive frame rate
+        int         target_fps;         // Target frame rate (default: 60)
+        int         min_fps;            // Minimum frame rate (default: 30)
+        double      frame_budget_ms;    // Frame time budget in ms
+        bool        skip_frames;        // Allow frame skipping when overloaded
+        int         max_stars_per_frame;// Max stars to render per frame (0=unlimited)
+        int         max_labels_per_frame;// Max labels to render per frame (0=unlimited)
+        bool        defer_text_render;  // Defer text rendering to reduce load
+        double      last_frame_time;    // Time of last frame (ms)
+        double      avg_frame_time;     // Running average frame time (ms)
+        int         frame_count;        // Frame counter for stats
+    } performance;
+
     // Maintains a list of clickable/hoverable areas.
     areas_t         *areas;
 

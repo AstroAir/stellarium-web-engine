@@ -40,17 +40,48 @@ static int on_pan(const gesture_t *gest, void *user)
     double pos[3];
     static double start_pos[3];
     projection_t proj;
+    double delta_yaw, delta_pitch;
+    double current_time = core->clock;
+    double dt;
+    double sensitivity = core->touch_settings.pan_sensitivity;
 
     core_get_proj(&proj);
     screen_to_mount(core->observer, &proj, gest->pos, pos);
-    if (gest->state == GESTURE_BEGIN)
+
+    if (gest->state == GESTURE_BEGIN) {
         vec3_copy(pos, start_pos);
+        // Reset pan inertia on gesture begin
+        core->pan_inertia.velocity[0] = 0.0;
+        core->pan_inertia.velocity[1] = 0.0;
+        core->pan_inertia.last_time = current_time;
+    }
 
     vec3_to_sphe(start_pos, &saz, &sal);
     vec3_to_sphe(pos, &daz, &dal);
-    core->observer->yaw += (saz - daz);
-    core->observer->pitch += (sal - dal);
+
+    // Apply touch sensitivity
+    delta_yaw = (saz - daz) * sensitivity;
+    delta_pitch = (sal - dal) * sensitivity;
+
+    core->observer->yaw += delta_yaw;
+    core->observer->pitch += delta_pitch;
     core->observer->pitch = clamp(core->observer->pitch, -M_PI / 2, +M_PI / 2);
+
+    // Calculate pan velocity for inertia
+    if (core->pan_inertia.enabled && gest->state == GESTURE_UPDATE) {
+        dt = current_time - core->pan_inertia.last_time;
+        if (dt > 0.0001) {  // Avoid division by zero
+            core->pan_inertia.velocity[0] = delta_yaw / dt;
+            core->pan_inertia.velocity[1] = delta_pitch / dt;
+        }
+        core->pan_inertia.last_time = current_time;
+    }
+
+    // Clear velocity on gesture end if inertia is disabled
+    if (gest->state == GESTURE_END && !core->pan_inertia.enabled) {
+        core->pan_inertia.velocity[0] = 0.0;
+        core->pan_inertia.velocity[1] = 0.0;
+    }
 
     obj_set_attr(&core->obj, "lock", NULL);
     observer_update(core->observer, true);
@@ -80,9 +111,31 @@ static int on_click(const gesture_t *gest, void *user)
 static int on_pinch(const gesture_t *gest, void *user)
 {
     static double start_fov = 0;
+    double current_time = core->clock;
+    double dt;
+
     if (gest->state == GESTURE_BEGIN) {
         start_fov = core->fov;
+        core->pinch_inertia.velocity = 0.0;
+        core->pinch_inertia.last_scale = 1.0;
+        core->pinch_inertia.last_time = current_time;
+        core->pinch_inertia.center[0] = gest->pos[0];
+        core->pinch_inertia.center[1] = gest->pos[1];
     }
+
+    // Calculate zoom velocity for inertia
+    if (core->pinch_inertia.enabled && gest->state == GESTURE_UPDATE) {
+        dt = current_time - core->pinch_inertia.last_time;
+        if (dt > 0.0001) {  // Avoid division by zero
+            double scale_change = gest->pinch / core->pinch_inertia.last_scale;
+            core->pinch_inertia.velocity = (scale_change - 1.0) / dt;
+        }
+        core->pinch_inertia.last_scale = gest->pinch;
+        core->pinch_inertia.last_time = current_time;
+        core->pinch_inertia.center[0] = gest->pos[0];
+        core->pinch_inertia.center[1] = gest->pos[1];
+    }
+
     core->fov = start_fov / gest->pinch;
     module_changed((obj_t*)core, "fov");
     return 0;
@@ -173,6 +226,8 @@ static int movements_update(obj_t *obj, double dt)
 {
     const double ZOOM_FACTOR = 1.05;
     const double MOVE_SPEED  = 1 * DD2R;
+    const double INERTIA_MIN_VELOCITY = 0.001;  // Minimum velocity threshold
+    projection_t proj;
 
     if (core->inputs.keys[KEY_RIGHT])
         core->observer->yaw += MOVE_SPEED * core->fov;
@@ -186,6 +241,54 @@ static int movements_update(obj_t *obj, double dt)
         core->fov /= ZOOM_FACTOR;
     if (core->inputs.keys[KEY_PAGE_DOWN])
         core->fov *= ZOOM_FACTOR;
+
+    // Apply pinch zoom inertia for smooth mobile experience
+    if (core->pinch_inertia.enabled &&
+        fabs(core->pinch_inertia.velocity) > INERTIA_MIN_VELOCITY) {
+        // Apply velocity to fov
+        double scale_factor = 1.0 + core->pinch_inertia.velocity * dt;
+        if (scale_factor > 0.5 && scale_factor < 2.0) {  // Safety bounds
+            core->fov /= scale_factor;
+            // Clamp FOV to valid range
+            core_get_proj(&proj);
+            core->fov = clamp(core->fov, CORE_MIN_FOV, proj.klass->max_ui_fov);
+            module_changed((obj_t*)core, "fov");
+        }
+
+        // Apply friction to velocity
+        core->pinch_inertia.velocity *= core->pinch_inertia.friction;
+
+        // Stop when velocity is very small
+        if (fabs(core->pinch_inertia.velocity) <= INERTIA_MIN_VELOCITY) {
+            core->pinch_inertia.velocity = 0.0;
+        }
+    }
+
+    // Apply pan inertia for smooth mobile panning
+    if (core->pan_inertia.enabled &&
+        (fabs(core->pan_inertia.velocity[0]) > INERTIA_MIN_VELOCITY ||
+         fabs(core->pan_inertia.velocity[1]) > INERTIA_MIN_VELOCITY)) {
+
+        // Apply velocity to yaw and pitch
+        core->observer->yaw += core->pan_inertia.velocity[0] * dt;
+        core->observer->pitch += core->pan_inertia.velocity[1] * dt;
+        core->observer->pitch = clamp(core->observer->pitch, -M_PI / 2, +M_PI / 2);
+
+        // Apply friction to velocity
+        core->pan_inertia.velocity[0] *= core->pan_inertia.friction;
+        core->pan_inertia.velocity[1] *= core->pan_inertia.friction;
+
+        // Stop when velocity is very small
+        if (fabs(core->pan_inertia.velocity[0]) <= INERTIA_MIN_VELOCITY)
+            core->pan_inertia.velocity[0] = 0.0;
+        if (fabs(core->pan_inertia.velocity[1]) <= INERTIA_MIN_VELOCITY)
+            core->pan_inertia.velocity[1] = 0.0;
+
+        // Notify changes
+        module_changed(&core->observer->obj, "pitch");
+        module_changed(&core->observer->obj, "yaw");
+    }
+
     return 0;
 }
 

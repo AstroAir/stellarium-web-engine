@@ -191,6 +191,46 @@ static void core_set_default(void)
 
     core->time_animation.dst_utc = NAN;
 
+    // Initialize pinch inertia settings for mobile
+    core->pinch_inertia.enabled = true;  // Enabled by default
+    core->pinch_inertia.velocity = 0.0;
+    core->pinch_inertia.friction = 0.92; // Good balance for smooth deceleration
+    core->pinch_inertia.last_scale = 1.0;
+    core->pinch_inertia.last_time = 0.0;
+    core->pinch_inertia.center[0] = 0.0;
+    core->pinch_inertia.center[1] = 0.0;
+
+    // Initialize pan inertia settings for mobile
+    core->pan_inertia.enabled = true;
+    core->pan_inertia.velocity[0] = 0.0;
+    core->pan_inertia.velocity[1] = 0.0;
+    core->pan_inertia.friction = 0.95;  // Slightly higher for smoother panning
+    core->pan_inertia.last_pos[0] = 0.0;
+    core->pan_inertia.last_pos[1] = 0.0;
+    core->pan_inertia.last_time = 0.0;
+
+    // Initialize touch sensitivity settings
+    core->touch_settings.pan_sensitivity = 1.0;
+    core->touch_settings.zoom_sensitivity = 1.0;
+
+    // Initialize render quality settings
+    core->render_settings.quality_level = 2;  // High quality by default
+    core->render_settings.reduce_labels = false;
+    core->render_settings.label_density = 1.0;
+
+    // Initialize performance optimization settings
+    core->performance.adaptive_fps = false;
+    core->performance.target_fps = 60;
+    core->performance.min_fps = 30;
+    core->performance.frame_budget_ms = 16.67; // 60fps
+    core->performance.skip_frames = false;
+    core->performance.max_stars_per_frame = 0; // Unlimited
+    core->performance.max_labels_per_frame = 0; // Unlimited
+    core->performance.defer_text_render = false;
+    core->performance.last_frame_time = 0.0;
+    core->performance.avg_frame_time = 16.67;
+    core->performance.frame_count = 0;
+
     observer_update(core->observer, false);
 }
 
@@ -1046,6 +1086,39 @@ static obj_klass_t core_klass = {
                  MEMBER(core_t, time_animation.dst_utc)),
         PROPERTY(time_speed, TYPE_FLOAT, MEMBER(core_t, time_speed)),
         PROPERTY(y_offset, TYPE_FLOAT, MEMBER(core_t, y_offset)),
+        PROPERTY(pinch_inertia_enabled, TYPE_BOOL,
+                 MEMBER(core_t, pinch_inertia.enabled)),
+        PROPERTY(pinch_inertia_friction, TYPE_FLOAT,
+                 MEMBER(core_t, pinch_inertia.friction)),
+        PROPERTY(pan_inertia_enabled, TYPE_BOOL,
+                 MEMBER(core_t, pan_inertia.enabled)),
+        PROPERTY(pan_inertia_friction, TYPE_FLOAT,
+                 MEMBER(core_t, pan_inertia.friction)),
+        PROPERTY(touch_pan_sensitivity, TYPE_FLOAT,
+                 MEMBER(core_t, touch_settings.pan_sensitivity)),
+        PROPERTY(touch_zoom_sensitivity, TYPE_FLOAT,
+                 MEMBER(core_t, touch_settings.zoom_sensitivity)),
+        PROPERTY(render_quality_level, TYPE_INT,
+                 MEMBER(core_t, render_settings.quality_level)),
+        PROPERTY(render_label_density, TYPE_FLOAT,
+                 MEMBER(core_t, render_settings.label_density)),
+        // Performance optimization properties
+        PROPERTY(adaptive_fps, TYPE_BOOL,
+                 MEMBER(core_t, performance.adaptive_fps)),
+        PROPERTY(target_fps, TYPE_INT,
+                 MEMBER(core_t, performance.target_fps)),
+        PROPERTY(min_fps, TYPE_INT,
+                 MEMBER(core_t, performance.min_fps)),
+        PROPERTY(skip_frames, TYPE_BOOL,
+                 MEMBER(core_t, performance.skip_frames)),
+        PROPERTY(max_stars_per_frame, TYPE_INT,
+                 MEMBER(core_t, performance.max_stars_per_frame)),
+        PROPERTY(max_labels_per_frame, TYPE_INT,
+                 MEMBER(core_t, performance.max_labels_per_frame)),
+        PROPERTY(defer_text_render, TYPE_BOOL,
+                 MEMBER(core_t, performance.defer_text_render)),
+        PROPERTY(avg_frame_time, TYPE_FLOAT,
+                 MEMBER(core_t, performance.avg_frame_time)),
         {}
     }
 };
