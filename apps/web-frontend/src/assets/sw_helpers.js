@@ -48,9 +48,118 @@ const swh = {
         Vue.prototype.$selectionLayer = lstel.createLayer({ id: 'slayer', z: 50, visible: true })
         Vue.prototype.$observingLayer = lstel.createLayer({ id: 'obslayer', z: 40, visible: true })
         Vue.prototype.$skyHintsLayer = lstel.createLayer({ id: 'skyhintslayer', z: 38, visible: true })
+
+        // Apply mobile optimizations if on mobile device
+        swh.applyDeviceOptimizations(lstel)
+
         callBackOnDone()
       }
     })
+  },
+
+  // Detect if running on mobile device
+  isMobileDevice: function () {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           (window.innerWidth <= 800 && window.innerHeight <= 900)
+  },
+
+  // Detect if running on low-power device
+  isLowPowerDevice: function () {
+    // Check for low memory or slow connection
+    const lowMemory = navigator.deviceMemory && navigator.deviceMemory < 4
+    const slowConnection = navigator.connection &&
+                          (navigator.connection.effectiveType === '2g' ||
+                           navigator.connection.effectiveType === 'slow-2g')
+    return lowMemory || slowConnection || this.isMobileDevice()
+  },
+
+  // Apply device-specific optimizations
+  applyDeviceOptimizations: function (stel) {
+    if (this.isMobileDevice()) {
+      console.log('[StellariumWeb] Mobile device detected, applying optimizations')
+
+      // Enable mobile-friendly touch settings
+      if (stel.setMobileSettings) {
+        stel.setMobileSettings({
+          pinchInertia: { enabled: true, friction: 0.90 },
+          panInertia: { enabled: true, friction: 0.93 },
+          touchSensitivity: { pan: 1.2, zoom: 1.1 },
+          renderQuality: { level: 1, labelDensity: 0.7 }
+        })
+      }
+
+      // Set moderate performance settings for mobile
+      if (stel.setPerformanceSettings) {
+        stel.setPerformanceSettings({
+          adaptiveFps: true,
+          targetFps: 45,
+          minFps: 20,
+          skipFrames: true,
+          maxStarsPerFrame: 8000,
+          maxLabelsPerFrame: 80
+        })
+      }
+    }
+
+    // Apply low-power optimizations if needed
+    if (this.isLowPowerDevice()) {
+      console.log('[StellariumWeb] Low-power device detected, reducing quality')
+      if (stel.setLowPowerMode) {
+        stel.setLowPowerMode(true)
+      }
+    }
+  },
+
+  // Get current performance mode
+  getPerformanceMode: function () {
+    const stel = Vue.prototype.$stel
+    if (!stel || !stel.getPerformanceSettings) return 'unknown'
+    const settings = stel.getPerformanceSettings()
+    if (settings.adaptiveFps && settings.targetFps <= 30) return 'low'
+    if (settings.adaptiveFps && settings.targetFps <= 45) return 'medium'
+    return 'high'
+  },
+
+  // Set performance mode
+  setPerformanceMode: function (mode) {
+    const stel = Vue.prototype.$stel
+    if (!stel) return
+
+    switch (mode) {
+      case 'low':
+        if (stel.setLowPowerMode) stel.setLowPowerMode(true)
+        break
+      case 'medium':
+        if (stel.setPerformanceSettings) {
+          stel.setPerformanceSettings({
+            adaptiveFps: true,
+            targetFps: 45,
+            minFps: 25,
+            skipFrames: true,
+            maxStarsPerFrame: 10000,
+            maxLabelsPerFrame: 100
+          })
+        }
+        if (stel.setRenderQuality) stel.setRenderQuality(1)
+        break
+      case 'high':
+        if (stel.setHighPerformanceMode) stel.setHighPerformanceMode(true)
+        break
+    }
+  },
+
+  // Get mobile settings
+  getMobileSettings: function () {
+    const stel = Vue.prototype.$stel
+    if (!stel || !stel.getMobileSettings) return null
+    return stel.getMobileSettings()
+  },
+
+  // Set mobile settings
+  setMobileSettings: function (settings) {
+    const stel = Vue.prototype.$stel
+    if (!stel || !stel.setMobileSettings) return
+    stel.setMobileSettings(settings)
   },
 
   monthNames: ['January', 'February', 'March', 'April', 'May', 'June',
